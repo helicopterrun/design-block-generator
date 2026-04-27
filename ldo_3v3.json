@@ -1,0 +1,63 @@
+{
+  "name": "ldo_3v3_ams1117",
+  "description": "AMS1117-3.3 5V→3.3V LDO with input/output decoupling (1A max, drops to 4.6V min)",
+  "target_lib_path": "hardware/blocks",
+  "schematic_size": "A4",
+  "ports": [
+    {"name": "VIN_5V",   "side": "left",  "type": "power_in"},
+    {"name": "VOUT_3V3", "side": "right", "type": "power_out"}
+  ],
+  "components": [
+    {
+      "ref": "U1",
+      "lib_id": "Regulator_Linear:AMS1117-3.3",
+      "value": "AMS1117-3.3",
+      "mpn": "AMS1117-3.3",
+      "footprint": "Package_TO_SOT_SMD:SOT-223-3_TabPin2",
+      "position": [120, 80],
+      "rotation": 0
+    },
+    {
+      "ref": "C1",
+      "lib_id": "Device:C",
+      "value": "10uF",
+      "mpn": "CL21A106KAYNNNE",
+      "footprint": "Capacitor_SMD:C_0805_2012Metric",
+      "position": [90, 85],
+      "rotation": 0
+    },
+    {
+      "ref": "C2",
+      "lib_id": "Device:C",
+      "value": "22uF",
+      "mpn": "CL21B226MAQNNNG",
+      "footprint": "Capacitor_SMD:C_0805_2012Metric",
+      "position": [150, 85],
+      "rotation": 0
+    },
+    {
+      "ref": "C3",
+      "lib_id": "Device:C",
+      "value": "100nF",
+      "mpn": "CL10B104KB8NNNC",
+      "footprint": "Capacitor_SMD:C_0603_1608Metric",
+      "position": [165, 85],
+      "rotation": 0
+    }
+  ],
+  "power_symbols": [
+    {"net": "GND", "position": [120, 110], "rotation": 0}
+  ],
+  "connections": [
+    { "from": {"port": "VIN_5V"},        "to": {"ref": "U1", "pin": "3"} },
+    { "from": {"ref":  "C1", "pin": "1"},"to": {"ref": "U1", "pin": "3"} },
+    { "from": {"ref":  "U1", "pin": "2"},"to": {"port": "VOUT_3V3"} },
+    { "from": {"ref":  "C2", "pin": "1"},"to": {"ref": "U1", "pin": "2"} },
+    { "from": {"ref":  "C3", "pin": "1"},"to": {"ref": "U1", "pin": "2"} },
+    { "from": {"ref":  "U1", "pin": "1"},"to": {"power": "GND"} },
+    { "from": {"ref":  "C1", "pin": "2"},"to": {"power": "GND"} },
+    { "from": {"ref":  "C2", "pin": "2"},"to": {"power": "GND"} },
+    { "from": {"ref":  "C3", "pin": "2"},"to": {"power": "GND"} }
+  ],
+  "notes": "Input cap C1 (10µF) handles transient demand on VIN_5V. Output cap C2 (22µF, X5R) is required for AMS1117 stability — do not omit. C3 (100nF) handles high-frequency bypass at the output. AMS1117 dropout is ~1.2V at 800 mA, so VIN_5V must be ≥4.5V for reliable 3.3V output. Thermal: SOT-223 dissipates ~1W max with copper pour; size accordingly for sustained current."
+}

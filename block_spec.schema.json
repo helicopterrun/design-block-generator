@@ -1,0 +1,225 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kicad-tools/design-block-generator/block_spec.schema.json",
+  "title": "KiCad Design Block Spec",
+  "description": "Structured intermediate representation of a KiCad design block, produced by Claude from a screenshot or description and consumed by the kicad-sch-api MCP server to generate a .kicad_sch file.",
+  "type": "object",
+  "required": ["name", "description", "target_lib_path", "ports", "components", "connections"],
+  "additionalProperties": false,
+  "properties": {
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z0-9]([a-z0-9_]*[a-z0-9])?$",
+      "description": "Block identifier in snake_case. Becomes the .kicad_sch filename."
+    },
+    "description": {
+      "type": "string",
+      "minLength": 5,
+      "maxLength": 200,
+      "description": "One-line summary, shown in the design block library browser."
+    },
+    "target_lib_path": {
+      "type": "string",
+      "description": "Filesystem path (absolute or product-relative) to the design block library directory. The generated .kicad_sch is written to <target_lib_path>/<n>.kicad_sch."
+    },
+    "schematic_size": {
+      "type": "string",
+      "enum": ["A4", "A3", "A2", "A1", "USLetter", "USLegal", "USLedger"],
+      "default": "A4",
+      "description": "Page size for the design block. A4 is appropriate for almost all blocks."
+    },
+    "ports": {
+      "type": "array",
+      "minItems": 1,
+      "description": "External connection points of the block. Become hierarchical labels in the .kicad_sch and connection points when the block is instantiated.",
+      "items": {
+        "type": "object",
+        "required": ["name", "side", "type"],
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9_+-]*$",
+            "description": "Port name. Common conventions: VIN, VOUT_3V3, GND, SDA, SCL, /RESET."
+          },
+          "side": {
+            "type": "string",
+            "enum": ["left", "right", "top", "bottom"],
+            "description": "Which side of the block this port appears on. Inputs typically left, outputs right, ground bottom, supplies top."
+          },
+          "type": {
+            "type": "string",
+            "enum": ["power_in", "power_out", "ground", "input", "output", "bidirectional", "open_collector", "open_emitter", "tristate", "passive"],
+            "description": "Electrical type, used by ERC to flag mismatches when the block is instantiated."
+          }
+        }
+      }
+    },
+    "components": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Every electrical component in the block.",
+      "items": {
+        "type": "object",
+        "required": ["ref", "lib_id", "value", "footprint", "position"],
+        "additionalProperties": false,
+        "properties": {
+          "ref": {
+            "type": "string",
+            "pattern": "^[A-Z]+[0-9]+$",
+            "description": "Reference designator, e.g. R1, C3, U1. Must be unique within the block."
+          },
+          "lib_id": {
+            "type": "string",
+            "pattern": "^[^:]+:[^:]+$",
+            "description": "KiCad symbol library identifier in the form <library>:<symbol>, e.g. Device:R, Regulator_Linear:AMS1117-3.3. Must resolve in the user's KiCad symbol library setup."
+          },
+          "value": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Schematic value. For passives: '10k', '100nF'. For ICs: typically the part name, e.g. 'AMS1117-3.3'."
+          },
+          "mpn": {
+            "type": "string",
+            "description": "Manufacturer part number. Validated against approved_parts.csv at pre-flight. Omit only for power flags / mechanical-only symbols."
+          },
+          "footprint": {
+            "type": "string",
+            "pattern": "^[^:]+:[^:]+$",
+            "description": "KiCad footprint identifier in the form <library>:<footprint>, e.g. Resistor_SMD:R_0603_1608Metric."
+          },
+          "position": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 2,
+            "items": {"type": "number"},
+            "description": "Schematic [x, y] position in mm. KiCad's grid is typically 2.54 mm; positions should be multiples of 1.27 mm at minimum."
+          },
+          "rotation": {
+            "type": "number",
+            "enum": [0, 90, 180, 270],
+            "default": 0,
+            "description": "Rotation in degrees, multiples of 90."
+          },
+          "mirror": {
+            "type": "string",
+            "enum": ["none", "x", "y"],
+            "default": "none",
+            "description": "Mirror axis."
+          }
+        }
+      }
+    },
+    "power_symbols": {
+      "type": "array",
+      "default": [],
+      "description": "Explicit power flags / supply symbols. Use for global rails (GND, +5V, +3V3) that should not appear as ports.",
+      "items": {
+        "type": "object",
+        "required": ["net", "position"],
+        "additionalProperties": false,
+        "properties": {
+          "net": {
+            "type": "string",
+            "description": "Power net name, e.g. 'GND', '+3V3', '+5V', 'VBUS'. Must match a KiCad power symbol in the user's libraries."
+          },
+          "position": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 2,
+            "items": {"type": "number"}
+          },
+          "rotation": {
+            "type": "number",
+            "enum": [0, 90, 180, 270],
+            "default": 0
+          }
+        }
+      }
+    },
+    "connections": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Wire-level netlist. Each connection links two endpoints; both must reference either a component pin or a declared port.",
+      "items": {
+        "type": "object",
+        "required": ["from", "to"],
+        "additionalProperties": false,
+        "properties": {
+          "from": {"$ref": "#/$defs/endpoint"},
+          "to": {"$ref": "#/$defs/endpoint"},
+          "waypoints": {
+            "type": "array",
+            "default": [],
+            "description": "Optional intermediate [x, y] points if the wire needs explicit routing. Omit for a direct connection.",
+            "items": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 2,
+              "items": {"type": "number"}
+            }
+          }
+        }
+      }
+    },
+    "labels": {
+      "type": "array",
+      "default": [],
+      "description": "Net labels at specific positions. Use to name internal nets that aren't ports.",
+      "items": {
+        "type": "object",
+        "required": ["text", "position"],
+        "additionalProperties": false,
+        "properties": {
+          "text": {"type": "string"},
+          "position": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 2,
+            "items": {"type": "number"}
+          },
+          "rotation": {
+            "type": "number",
+            "enum": [0, 90, 180, 270],
+            "default": 0
+          }
+        }
+      }
+    },
+    "notes": {
+      "type": "string",
+      "description": "Free-form notes about the block — design rationale, gotchas, references. Rendered as a text frame on the schematic."
+    }
+  },
+  "$defs": {
+    "endpoint": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["ref", "pin"],
+          "additionalProperties": false,
+          "properties": {
+            "ref": {"type": "string", "description": "Component reference designator."},
+            "pin": {"type": "string", "description": "Pin number or name as it appears in the symbol."}
+          }
+        },
+        {
+          "type": "object",
+          "required": ["port"],
+          "additionalProperties": false,
+          "properties": {
+            "port": {"type": "string", "description": "Name of a port declared in the spec's `ports` array."}
+          }
+        },
+        {
+          "type": "object",
+          "required": ["power"],
+          "additionalProperties": false,
+          "properties": {
+            "power": {"type": "string", "description": "Name of a power symbol's net (must exist in `power_symbols`)."}
+          }
+        }
+      ]
+    }
+  }
+}
