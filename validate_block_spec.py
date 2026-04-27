@@ -159,15 +159,25 @@ def main() -> int:
     p = argparse.ArgumentParser(description=__doc__.split("\n")[1])
     p.add_argument("--spec",     type=Path, required=True,
                    help="Block spec JSON file")
-    p.add_argument("--approved", type=Path, required=True,
-                   help="approved_parts.csv from the product root")
+    p.add_argument("--approved", type=Path, default=None,
+                   help="approved_parts.csv from the product root "
+                        "(required unless --skip-mpn-gate is set)")
     p.add_argument("--schema",   type=Path, required=True,
                    help="block_spec.schema.json from this skill bundle")
+    p.add_argument("--skip-mpn-gate", action="store_true",
+                   help="skip the approved-parts MPN check; useful for "
+                        "standalone or shared blocks not tied to a product")
     args = p.parse_args()
 
-    for path, label in [(args.spec, "spec"),
-                        (args.approved, "approved-parts CSV"),
-                        (args.schema, "schema")]:
+    if not args.skip_mpn_gate and args.approved is None:
+        print("✗ --approved is required unless --skip-mpn-gate is set",
+              file=sys.stderr)
+        return 2
+
+    paths_to_check = [(args.spec, "spec"), (args.schema, "schema")]
+    if not args.skip_mpn_gate:
+        paths_to_check.append((args.approved, "approved-parts CSV"))
+    for path, label in paths_to_check:
         if not path.exists():
             print(f"✗ {label} not found: {path}", file=sys.stderr)
             return 2
@@ -178,7 +188,9 @@ def main() -> int:
         print(f"✗ spec is not valid JSON: {e}", file=sys.stderr)
         return 1
 
-    approved = load_approved_mpns(args.approved)
+    approved: set[str] = (
+        set() if args.skip_mpn_gate else load_approved_mpns(args.approved)
+    )
 
     errors: list[str] = []
     validate_schema(spec, args.schema, errors)
@@ -186,7 +198,8 @@ def main() -> int:
     # may not have the expected shape and we'd cascade nonsense errors.
     if not errors:
         validate_unique_refs(spec, errors)
-        validate_mpns(spec, approved, errors)
+        if not args.skip_mpn_gate:
+            validate_mpns(spec, approved, errors)
         validate_connections(spec, errors)
 
     name = spec.get("name", "<unnamed>")
@@ -194,9 +207,11 @@ def main() -> int:
     n_port = len(spec.get("ports", []))
     n_conn = len(spec.get("connections", []))
 
+    gate_note = (f"{len(approved)} approved MPNs"
+                 if not args.skip_mpn_gate else "MPN gate skipped")
     print(f"Validated spec '{name}': "
           f"{n_comp} components, {n_port} ports, {n_conn} connections "
-          f"against {len(approved)} approved MPNs")
+          f"({gate_note})")
 
     if errors:
         print(f"\n✗ {len(errors)} error(s):", file=sys.stderr)

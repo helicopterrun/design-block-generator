@@ -7,18 +7,20 @@ Companion to [`kicad-product-workflow`](../kicad-product-workflow/) — that ski
 ## How it works
 
 ```
-input → Claude analyzes → JSON spec → pre-flight validator → kicad-sch-api MCP → .kicad_sch → kicad-cli ERC + check_approved_parts.py
+input → Claude analyzes → JSON spec → validate_block_spec.py → generate_block.py → .kicad_sch → kicad-cli ERC + check_approved_parts.py
 ```
 
-The intermediate JSON spec is the contract. Everything before it is judgment (Claude looking at the input); everything after is mechanical (validators and tool calls).
+The intermediate JSON spec is the contract. Everything before it is judgment (Claude looking at the input); everything after is mechanical (validator + generator).
 
 ## Install
 
 ```bash
-./scripts/install.sh
+./install.sh
 ```
 
-This installs the [`kicad-sch-api`](https://pypi.org/project/kicad-sch-api/) MCP server, registers it with Claude Code, and installs `jsonschema` for the pre-flight validator. Restart Claude Code afterwards. Verify with `claude mcp list` — you should see `kicad-sch-api` among the registered servers.
+This installs the [`kicad-sch-api`](https://pypi.org/project/kicad-sch-api/) Python library + MCP server, registers the server with Claude Code, and installs `jsonschema` for the pre-flight validator. Restart Claude Code afterwards.
+
+The MCP server is optional — `generate_block.py` drives the underlying Python library directly. The MCP path is useful for **interactively editing existing blocks** (renaming, tweaking wires) where you want one tool call per change.
 
 ## Use
 
@@ -28,19 +30,18 @@ The output lands in `<your-product>/hardware/blocks/<n>.kicad_sch` (or wherever 
 
 ## Layout
 
+Files live flat at the skill root:
+
 ```
 design-block-generator/
-├── SKILL.md                                # the skill itself (read by Claude)
-├── README.md                               # this file (read by humans)
-├── scripts/
-│   ├── install.sh                          # one-shot setup
-│   └── validate_block_spec.py              # pre-flight validator
-├── templates/
-│   └── block_spec.schema.json              # JSON schema for specs
-├── examples/
-│   └── ldo_3v3.json                        # worked AMS1117-3.3 LDO example
-└── references/
-    └── kicad-10-design-blocks.md           # KiCad 10 design block format reference
+├── SKILL.md                       # the skill itself (read by Claude)
+├── README.md                      # this file (read by humans)
+├── install.sh                     # one-shot setup
+├── validate_block_spec.py         # pre-flight validator
+├── generate_block.py              # generator (drives kicad_sch_api directly)
+├── block_spec.schema.json         # JSON schema for specs
+├── ldo_3v3.json                   # worked AMS1117-3.3 LDO example
+└── kicad-10-design-blocks.md      # KiCad 10 design block format reference
 ```
 
 ## Requirements
@@ -48,4 +49,4 @@ design-block-generator/
 - KiCad 10.0+ (design blocks exist in 9 too, but this skill targets 10's library format)
 - Python 3.10+
 - Claude Code with `claude` on PATH
-- A product repo following the `kicad-product-workflow` layout (specifically: an `approved_parts.csv` at the product root)
+- A product repo following the `kicad-product-workflow` layout (specifically: an `approved_parts.csv` at the product root) — OR pass `--skip-mpn-gate` to the validator for standalone / shared blocks
