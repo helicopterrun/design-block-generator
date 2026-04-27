@@ -107,9 +107,19 @@ pip install --user jsonschema 2>/dev/null \
 # on packaging. Probe in order; the first hit wins.
 info "Resolving kicad-sch-api MCP entry point…"
 MCP_CMD=""
+
+# pip --user lands in a python-version-specific bin dir that's often NOT on
+# PATH (e.g. ~/Library/Python/X.Y/bin on macOS), so probe it explicitly in
+# addition to PATH.
+USER_BIN="$(python3 -m site --user-base 2>/dev/null)/bin"
+
 for candidate in kicad-sch-mcp kicad-sch-api-mcp kicad_sch_mcp; do
   if command -v "$candidate" >/dev/null; then
     MCP_CMD="$candidate"
+    break
+  fi
+  if [[ -x "$USER_BIN/$candidate" ]]; then
+    MCP_CMD="$USER_BIN/$candidate"
     break
   fi
 done
@@ -117,7 +127,7 @@ done
 # Fall back to module-style invocation
 if [[ -z "$MCP_CMD" ]]; then
   for module in kicad_sch_api.mcp kicad_sch_api.server kicad_sch_api; do
-    if python3 -c "import importlib.util as u; sys.exit(0 if u.find_spec('$module') else 1)" 2>/dev/null; then
+    if python3 -c "import importlib.util, sys; sys.exit(0 if importlib.util.find_spec('$module') else 1)" 2>/dev/null; then
       MCP_CMD="python3 -m $module"
       break
     fi
@@ -145,8 +155,9 @@ if claude mcp list 2>/dev/null | grep -q "^$MCP_NAME\b"; then
 fi
 
 # shellcheck disable=SC2086  # we want word-splitting on $MCP_CMD here
-run claude mcp add "$MCP_NAME" -- $MCP_CMD
-ok "Registered"
+# --scope user: this is a cross-product skill, register globally not per-project
+run claude mcp add --scope user "$MCP_NAME" -- $MCP_CMD
+ok "Registered (user scope)"
 
 # ---- verify -----------------------------------------------------------------
 info "Verifying with 'claude mcp list'…"
