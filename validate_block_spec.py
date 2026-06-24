@@ -40,6 +40,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -49,23 +50,53 @@ from pathlib import Path
 # fiducials, mechanical-only). Mirrors the skip list in check_approved_parts.py.
 NO_MPN_PREFIXES = ("#PWR", "#FLG", "TP", "FID", "H")
 
+SHARED_APPROVED_FILENAME = "example-block-library/jlcpcb_basic_approved.csv"
+
 
 # ---------------------------------------------------------------------------
 # Approved-parts loading (mirrors check_approved_parts.py)
 # ---------------------------------------------------------------------------
 
-def load_approved_mpns(csv_path: Path) -> set[str]:
+def _load_one_csv(csv_path: Path) -> set[str]:
     approved: set[str] = set()
     with csv_path.open(newline="") as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            mpn_cell = (row.get("mpn") or "").strip()
-            if not mpn_cell or mpn_cell.startswith("#"):
-                continue
-            for key in ("mpn", "alt_mpn_1", "alt_mpn_2"):
-                val = (row.get(key) or "").strip()
-                if val and not val.startswith("#"):
-                    approved.add(val)
+        # Strip leading comment lines so DictReader treats the header row correctly.
+        rows = [ln for ln in f if not ln.lstrip().startswith("#")]
+    reader = csv.DictReader(rows)
+    for row in reader:
+        mpn_cell = (row.get("mpn") or "").strip()
+        if not mpn_cell or mpn_cell.startswith("#"):
+            continue
+        for key in ("mpn", "alt_mpn_1", "alt_mpn_2"):
+            val = (row.get(key) or "").strip()
+            if val and not val.startswith("#"):
+                approved.add(val)
+    return approved
+
+
+def discover_shared_approved(start: Path) -> Path | None:
+    """Walk up from `start` looking for example-block-library/jlcpcb_basic_approved.csv."""
+    if os.environ.get("APPROVED_PARTS_NO_SHARED"):
+        return None
+    cur = start.resolve()
+    if cur.is_file():
+        cur = cur.parent
+    for ancestor in [cur, *cur.parents]:
+        candidate = ancestor / SHARED_APPROVED_FILENAME
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def load_approved_mpns(csv_paths: Path | list[Path]) -> set[str]:
+    if isinstance(csv_paths, Path):
+        csv_paths = [csv_paths]
+    approved: set[str] = set()
+    for path in csv_paths:
+        n_before = len(approved)
+        approved |= _load_one_csv(path)
+        print(f"  loaded {len(approved) - n_before} MPNs from {path}",
+              file=sys.stderr)
     return approved
 
 
@@ -188,9 +219,14 @@ def main() -> int:
         print(f"✗ spec is not valid JSON: {e}", file=sys.stderr)
         return 1
 
-    approved: set[str] = (
-        set() if args.skip_mpn_gate else load_approved_mpns(args.approved)
-    )
+    if args.skip_mpn_gate:
+        approved: set[str] = set()
+    else:
+        sources = [args.approved]
+        shared = discover_shared_approved(args.approved)
+        if shared:
+            sources.append(shared)
+        approved = load_approved_mpns(sources)
 
     errors: list[str] = []
     validate_schema(spec, args.schema, errors)
