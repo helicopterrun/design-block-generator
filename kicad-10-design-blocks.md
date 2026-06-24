@@ -4,59 +4,47 @@ Reference for the design-block-generator skill. Things that aren't immediately o
 
 ## What a design block actually is
 
-A KiCad 10 design block is, on disk, a regular `.kicad_sch` file. It's just a schematic. What makes it a "design block" is two things:
+A KiCad 10 design block is, on disk, a **directory** named `<Block Name>.kicad_block/` containing two files:
+- `<Block Name>.kicad_sch` — a normal schematic. Its **hierarchical labels** are the block's external connection points; when the block is placed in another schematic they become its pins (the label's electrical type drives ERC).
+- `<Block Name>.json` — block metadata: `{"description": "...", "keywords": "...", "fields": {}}`.
 
-1. It lives inside a folder that's been registered as a design block library in the KiCad library tables.
-2. It uses **hierarchical labels** to declare its external connection points. When the block is instantiated in another schematic, those hierarchical labels become the connection pins of the block.
-
-There's no special file extension, no extra metadata file required. A `.kicad_sch` file with hierarchical labels and no instantiations of itself is a valid design block. This is why kicad-sch-api can produce design blocks without any special "design block mode" — it's just generating a schematic.
+> **Verified against KiCad 10.0 on this machine.** (The earlier "a block is just a bare `.kicad_sch`" is the KiCad-9-era shape — no longer accurate.) `kicad-cli` has no design-block command, so blocks are created in the GUI ("Save Selection as Design Block") or by writing this directory structure directly — see `extract_block.py`, which captures a finished hierarchical sheet into a native block.
 
 ## Library structure on disk
 
-A design block library is a directory of `.kicad_sch` files, optionally with a `meta.json` describing the library (added in KiCad 9, refined in 10):
+A design block library is a directory whose name ends in **`.kicad_blocks`**; inside it, each block is its own `.kicad_block/` directory:
 
 ```
-<lib-name>/
-├── meta.json             # optional but recommended; lib name, description, version
-├── ldo_3v3.kicad_sch
-├── usb_c_5v_input.kicad_sch
-├── stm32_min.kicad_sch
+<Library>.kicad_blocks/
+├── Buck AP63203 12V to 3V3.kicad_block/
+│   ├── Buck AP63203 12V to 3V3.kicad_sch
+│   └── Buck AP63203 12V to 3V3.json
+├── LDO 3V3 AMS1117.kicad_block/
+│   └── ...
 └── ...
 ```
 
-Each `.kicad_sch` file in the directory becomes a selectable block in the design block browser. The filename (minus `.kicad_sch`) is the block's name in the picker.
-
-**Recommended `meta.json`:**
-
-```json
-{
-  "name": "<product>-blocks",
-  "description": "Reusable subcircuits for the <product> family",
-  "version": "1.0"
-}
-```
-
-KiCad will use the `name` and `description` fields in the design block library browser; without `meta.json` it falls back to the directory name.
+The `.kicad_block` directory name (minus the extension) is the block's name in the picker; the `<name>.kicad_sch` and `<name>.json` inside must share that exact name.
 
 ## Library tables
 
 Two scopes, same as symbol libraries:
 
-- **Global** — `~/.config/kicad/10.0/design_blocks_global.kicad_dblib_tbl` (Linux), `~/Library/Preferences/kicad/10.0/...` (macOS). Available to all projects.
-- **Project-local** — `<project>/<project>.kicad_dblib_tbl`. Only visible when that project is open.
+- **Global** — `~/Library/Preferences/kicad/10.0/design-block-lib-table` (macOS; `~/.config/kicad/10.0/...` on Linux). Available to all projects.
+- **Project-local** — a `design-block-lib-table` in the project directory. Only visible when that project is open.
 
-Per-product blocks should live in project-local tables. Cross-product, organization-wide blocks should be global.
+Per-product blocks should live in project-local tables; cross-product blocks go global (and only after the promotion rule is met). Easiest way to register: the GUI — **Preferences → Manage Design Block Libraries → Add**, pointed at the `.kicad_blocks` directory.
 
-The table file is itself an S-expression:
+The table is an S-expression — note the top symbol is `design_block_lib_table` with a `(version …)`:
 
 ```
-(design_block_libraries
-  (lib (name "wildlife-cam-blocks")
-       (type "KiCad")
-       (uri "${KIPRJMOD}/hardware/blocks")
-       (options "")
-       (descr "Reusable subcircuits for wildlife-cam")))
+(design_block_lib_table
+	(version 7)
+	(lib (name "example-board") (type "KiCad")
+	     (uri "${KIPRJMOD}/blocks/example-board.kicad_blocks") (options "") (descr "…")))
 ```
+
+`${KIPRJMOD}` resolves to the project root, keeping the entry portable.
 
 `${KIPRJMOD}` resolves to the project root, so this entry stays portable across machines.
 
